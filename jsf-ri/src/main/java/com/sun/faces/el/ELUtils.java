@@ -113,11 +113,15 @@ public class ELUtils {
     private static final Pattern METHOD_EXPRESSION_LOOKUP =
           Pattern.compile(".[{]cc[.]attrs[.]\\w+[}]");
 
-    private static final int CACHE_SIZE = 1024;
+    // for JUnit tests only
+    static boolean useCaching = true;
+    private static final String CACHE_SIZE_PROPERTY = RIConstants.FACES_PREFIX + "ELUtilsCacheSize";
+    private static final int CACHE_SIZE = Integer.parseInt(System.getProperty(CACHE_SIZE_PROPERTY, "8192"));
+    
     private static final Map<String, Boolean> CACHE_COMPOSITE_WITH_ARGS = Collections.synchronizedMap(new LRUMap<String, Boolean>(CACHE_SIZE));
     private static final Map<String, Boolean> CACHE_COMPOSITE_EXPR = Collections.synchronizedMap(new LRUMap<String, Boolean>(CACHE_SIZE));
     private static final Map<String, Boolean> CACHE_METHOD_EXPR = Collections.synchronizedMap(new LRUMap<String, Boolean>(CACHE_SIZE));
-
+    
     private static final String APPLICATION_SCOPE = "applicationScope";
     private static final String SESSION_SCOPE = "sessionScope";
     private static final String REQUEST_SCOPE = "requestScope";
@@ -579,12 +583,17 @@ public class ELUtils {
     // --------------------------------------------------------- Private Methods
 
     private static boolean cachedMatcher(Map<String, Boolean> cache, final Pattern regexp, String expression) {
-        Boolean result = cache.get(expression);
-        if (result == null) {
+        Boolean result;
+        if (useCaching) {
+            result = cache.get(expression);
+            if (result == null) {
+                result = regexp.matcher(expression).find();
+                cache.put(expression, result);
+            }
+        } else {
             result = regexp.matcher(expression).find();
-            cache.put(expression, result);
         }
-        return result;
+        return result.booleanValue();
 
         // java8
         // return cache.computeIfAbsent(expression, key -> regexp.matcher(key).find());
