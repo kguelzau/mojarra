@@ -44,34 +44,34 @@ import com.sun.faces.RIConstants;
 import com.sun.faces.application.ApplicationAssociate;
 import com.sun.faces.context.flash.FlashELResolver;
 import com.sun.faces.mgbean.BeanManager;
+import com.sun.faces.util.LRUMap;
 import com.sun.faces.util.MessageUtils;
-
 import com.sun.faces.util.ReflectionUtils;
+
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
+
 import javax.el.ArrayELResolver;
 import javax.el.BeanELResolver;
 import javax.el.CompositeELResolver;
 import javax.el.ELContext;
 import javax.el.ELResolver;
+import javax.el.ExpressionFactory;
 import javax.el.ListELResolver;
 import javax.el.MapELResolver;
 import javax.el.ResourceBundleELResolver;
 import javax.el.ValueExpression;
+import javax.faces.component.UIViewRoot;
 import javax.faces.context.ExternalContext;
 import javax.faces.context.FacesContext;
 import javax.faces.el.EvaluationException;
 import javax.faces.el.PropertyResolver;
 import javax.faces.el.ReferenceSyntaxException;
 import javax.faces.el.VariableResolver;
-import javax.faces.component.UIViewRoot;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import javax.el.ExpressionFactory;
 import javax.servlet.ServletContext;
 import javax.servlet.jsp.JspApplicationContext;
 import javax.servlet.jsp.JspFactory;
@@ -96,11 +96,11 @@ public class ELUtils {
      *
      *    #{cc.attrs.label('foo')}
      *
-     * is illegal, while:
+     * is legal, while:
      *
      *    #{cc.attrs.bean.label('foo')}
      *
-     * is legal.
+     * is illegal.
      */
     private static final Pattern COMPOSITE_COMPONENT_LOOKUP_WITH_ARGS =
           Pattern.compile("(?:[ ]+|[\\[{,(])cc[.]attrs[.]\\w+[(].+[)]");
@@ -112,6 +112,11 @@ public class ELUtils {
      */
     private static final Pattern METHOD_EXPRESSION_LOOKUP =
           Pattern.compile(".[{]cc[.]attrs[.]\\w+[}]");
+
+    private static final int CACHE_SIZE = 1024;
+    private static final Map<String, Boolean> CACHE_COMPOSITE_WITH_ARGS = Collections.synchronizedMap(new LRUMap<String, Boolean>(CACHE_SIZE));
+    private static final Map<String, Boolean> CACHE_COMPOSITE_EXPR = Collections.synchronizedMap(new LRUMap<String, Boolean>(CACHE_SIZE));
+    private static final Map<String, Boolean> CACHE_METHOD_EXPR = Collections.synchronizedMap(new LRUMap<String, Boolean>(CACHE_SIZE));
 
     private static final String APPLICATION_SCOPE = "applicationScope";
     private static final String SESSION_SCOPE = "sessionScope";
@@ -196,31 +201,23 @@ public class ELUtils {
 
     public static boolean isCompositeComponentExpr(String expression) {
 
-        // TODO we should be trying to re-use the Matcher by calling
-        // m.reset(expression);
-        Matcher m = COMPOSITE_COMPONENT_EXPRESSION.matcher(expression);
-        return m.find();
+        return cachedMatcher(CACHE_COMPOSITE_EXPR, COMPOSITE_COMPONENT_EXPRESSION, expression);
 
     }
 
 
     public static boolean isCompositeComponentMethodExprLookup(String expression) {
 
-        Matcher m = METHOD_EXPRESSION_LOOKUP.matcher(expression);
-        return m.matches();
+        return cachedMatcher(CACHE_METHOD_EXPR, METHOD_EXPRESSION_LOOKUP, expression);
 
     }
 
 
     public static boolean isCompositeComponentLookupWithArgs(String expression) {
 
-        // TODO we should be trying to re-use the Matcher by calling
-        // m.reset(expression);
-        Matcher m = COMPOSITE_COMPONENT_LOOKUP_WITH_ARGS.matcher(expression);
-        return m.find();
-        
-    }
+        return cachedMatcher(CACHE_COMPOSITE_WITH_ARGS, COMPOSITE_COMPONENT_LOOKUP_WITH_ARGS, expression);
 
+    }
 
     /**
      * <p>Create the <code>ELResolver</code> chain for programmatic EL calls.</p>
@@ -581,6 +578,17 @@ public class ELUtils {
 
     // --------------------------------------------------------- Private Methods
 
+    private static boolean cachedMatcher(Map<String, Boolean> cache, final Pattern regexp, String expression) {
+        Boolean result = cache.get(expression);
+        if (result == null) {
+            result = regexp.matcher(expression).find();
+            cache.put(expression, result);
+        }
+        return result;
+
+        // java8
+        // return cache.computeIfAbsent(expression, key -> regexp.matcher(key).find());
+    }
 
     /**
      * <p>Add the <code>ELResolvers</code> from the provided list
