@@ -373,8 +373,8 @@ public class ELText {
         boolean esc = false;
         int vlen = 0;
 
-        StringBuffer buff = new StringBuffer(128);
-        List text = new ArrayList();
+        StringBuilder buff = new StringBuilder(128);
+        List<ELText> text = new ArrayList<ELText>();
         ELText t = null;
         ValueExpression ve = null;
 
